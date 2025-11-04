@@ -1,142 +1,189 @@
-<a href="https://livekit.io/">
-  <img src="./.github/assets/livekit-mark.png" alt="LiveKit logo" width="100" height="100">
-</a>
+# Multi-Agent Voice Interaction System (POC)
 
-# LiveKit Agents Starter - Python
+A production-ready LiveKit-based voice AI system featuring two coordinated agents:
+- **Business Agent**: Primary speaker handling business discussions and orchestration
+- **Technical Agent**: Specialist providing technical input on-demand only
 
-A complete starter project for building voice AI apps with [LiveKit Agents for Python](https://github.com/livekit/agents) and [LiveKit Cloud](https://cloud.livekit.io/).
+## Features
 
-The starter project includes:
+✅ **Selective Agent Activation**: Technical Agent only speaks when explicitly needed  
+✅ **Shared Context**: Both agents access full conversation history  
+✅ **Natural Handoffs**: Smooth transitions with verbal cues  
+✅ **LLM-Driven Coordination**: Business Agent intelligently decides when to delegate  
+✅ **Production-Ready**: Built on LiveKit's official starter template  
 
-- A simple voice AI assistant, ready for extension and customization
-- A voice AI pipeline with [models](https://docs.livekit.io/agents/models) from OpenAI, Cartesia, and AssemblyAI served through LiveKit Cloud
-  - Easily integrate your preferred [LLM](https://docs.livekit.io/agents/models/llm/), [STT](https://docs.livekit.io/agents/models/stt/), and [TTS](https://docs.livekit.io/agents/models/tts/) instead, or swap to a realtime model like the [OpenAI Realtime API](https://docs.livekit.io/agents/models/realtime/openai)
-- Eval suite based on the LiveKit Agents [testing & evaluation framework](https://docs.livekit.io/agents/build/testing/)
-- [LiveKit Turn Detector](https://docs.livekit.io/agents/build/turns/turn-detector/) for contextually-aware speaker detection, with multilingual support
-- [Background voice cancellation](https://docs.livekit.io/home/cloud/noise-cancellation/)
-- Integrated [metrics and logging](https://docs.livekit.io/agents/build/metrics/)
-- A Dockerfile ready for [production deployment](https://docs.livekit.io/agents/ops/deployment/)
+## Quick Start
 
-This starter app is compatible with any [custom web/mobile frontend](https://docs.livekit.io/agents/start/frontend/) or [SIP-based telephony](https://docs.livekit.io/agents/start/telephony/).
-
-## Coding agents and MCP
-
-This project is designed to work with coding agents like [Cursor](https://www.cursor.com/) and [Claude Code](https://www.anthropic.com/claude-code). 
-
-To get the most out of these tools, install the [LiveKit Docs MCP server](https://docs.livekit.io/mcp).
-
-For Cursor, use this link:
-
-[![Install MCP Server](https://cursor.com/deeplink/mcp-install-light.svg)](https://cursor.com/en-US/install-mcp?name=livekit-docs&config=eyJ1cmwiOiJodHRwczovL2RvY3MubGl2ZWtpdC5pby9tY3AifQ%3D%3D)
-
-For Claude Code, run this command:
-
-```
-claude mcp add --transport http livekit-docs https://docs.livekit.io/mcp
-```
-
-For Codex CLI, use this command to install the server:
-```
-codex mcp add --url https://docs.livekit.io/mcp livekit-docs
-```
-
-For Gemini CLI, use this command to install the server:
-```
-gemini mcp add --transport http livekit-docs https://docs.livekit.io/mcp
-```
-
-The project includes a complete [AGENTS.md](AGENTS.md) file for these assistants. You can modify this file  your needs. To learn more about this file, see [https://agents.md](https://agents.md).
-
-## Dev Setup
-
-Clone the repository and install dependencies to a virtual environment:
-
-```console
-cd agent-starter-python
+### 1. Install Dependencies
+```bash
 uv sync
 ```
 
-Sign up for [LiveKit Cloud](https://cloud.livekit.io/) then set up the environment by copying `.env.example` to `.env.local` and filling in the required keys:
-
-- `LIVEKIT_URL`
-- `LIVEKIT_API_KEY`
-- `LIVEKIT_API_SECRET`
-
-You can load the LiveKit environment automatically using the [LiveKit CLI](https://docs.livekit.io/home/cli/cli-setup):
-
+### 2. Configure Environment
 ```bash
-lk cloud auth
-lk app env -w -d .env.local
+cp .env.example .env.local
+# Edit .env.local with your API keys
 ```
 
-## Run the agent
+Get your API keys:
+- **LiveKit**: [cloud.livekit.io](https://cloud.livekit.io/)
+- **OpenAI**: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- **Deepgram**: [console.deepgram.com](https://console.deepgram.com/)
+- **Cartesia**: [play.cartesia.ai/keys](https://play.cartesia.ai/keys)
 
-Before your first run, you must download certain models such as [Silero VAD](https://docs.livekit.io/agents/build/turns/vad/) and the [LiveKit turn detector](https://docs.livekit.io/agents/build/turns/turn-detector/):
-
-```console
-uv run python src/agent.py download-files
+### 3. Download Models
+```bash
+uv run src/agent.py download-files
 ```
 
-Next, run this command to speak to your agent directly in your terminal:
+### 4. Run the Agent
 
-```console
-uv run python src/agent.py console
+**Test in Terminal:**
+```bash
+uv run src/agent.py console
 ```
 
-To run the agent for use with a frontend or telephony, use the `dev` command:
-
-```console
-uv run python src/agent.py dev
+**Run for Frontend/Telephony:**
+```bash
+uv run src/agent.py dev
 ```
 
-In production, use the `start` command:
-
-```console
-uv run python src/agent.py start
+**Production:**
+```bash
+uv run src/agent.py start
 ```
 
-## Frontend & Telephony
+## How It Works
 
-Get started quickly with our pre-built frontend starter apps, or add telephony support:
+### Conversation Flow Example
+```
+User: "How much would it cost to build a mobile app?"
+Business Agent: "Great question! For a mobile app, costs typically..."
 
-| Platform | Link | Description |
-|----------|----------|-------------|
-| **Web** | [`livekit-examples/agent-starter-react`](https://github.com/livekit-examples/agent-starter-react) | Web voice AI assistant with React & Next.js |
-| **iOS/macOS** | [`livekit-examples/agent-starter-swift`](https://github.com/livekit-examples/agent-starter-swift) | Native iOS, macOS, and visionOS voice AI assistant |
-| **Flutter** | [`livekit-examples/agent-starter-flutter`](https://github.com/livekit-examples/agent-starter-flutter) | Cross-platform voice AI assistant app |
-| **React Native** | [`livekit-examples/voice-assistant-react-native`](https://github.com/livekit-examples/voice-assistant-react-native) | Native mobile app with React Native & Expo |
-| **Android** | [`livekit-examples/agent-starter-android`](https://github.com/livekit-examples/agent-starter-android) | Native Android app with Kotlin & Jetpack Compose |
-| **Web Embed** | [`livekit-examples/agent-starter-embed`](https://github.com/livekit-examples/agent-starter-embed) | Voice AI widget for any website |
-| **Telephony** | [📚 Documentation](https://docs.livekit.io/agents/start/telephony/) | Add inbound or outbound calling to your agent |
+User: "What technology stack would you recommend?"
+Business Agent: "That's a technical question. Let me bring in our Technical Specialist."
+[SWITCHES TO TECHNICAL AGENT]
 
-For advanced customization, see the [complete frontend guide](https://docs.livekit.io/agents/start/frontend/).
+Technical Agent: "Technical Agent here. For mobile development, I'd recommend..."
+[Technical Agent uses return_to_business_agent tool]
+Technical Agent: "I'll hand this back to the Business Agent now."
+[SWITCHES BACK TO BUSINESS AGENT]
 
-## Tests and evals
+Business Agent: "Thanks for that insight. Now, regarding your budget and timeline..."
+```
 
-This project includes a complete suite of evals, based on the LiveKit Agents [testing & evaluation framework](https://docs.livekit.io/agents/build/testing/). To run them, use `pytest`.
+### Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      LiveKit Room                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
+│  │   User       │◄──►│  Business    │◄──►│  Technical   │  │
+│  │  (Human)     │    │   Agent      │    │   Agent      │  │
+│  └──────────────┘    └──────────────┘    └──────────────┘  │
+│                             │                     │          │
+│                      (Primary Speaker)    (On-demand)        │
+└─────────────────────────────────────────────────────────────┘
+```
 
-```console
+### Agent Behavior
+
+**Business Agent:**
+- Leads all conversations by default
+- Handles: pricing, timelines, requirements, general questions
+- Delegates: technical architecture, implementation, tech stack questions
+- Uses `delegate_to_technical_agent` tool for handoffs
+
+**Technical Agent:**
+- Only speaks when explicitly delegated
+- Provides: technical specifications, architecture insights, implementation details
+- Uses `return_to_business_agent` tool to return control
+- Does NOT respond to every user message
+
+## Testing
+
+Run the evaluation suite:
+```bash
 uv run pytest
 ```
 
-## Using this template repo for your own project
+Tests validate:
+- Business Agent greeting behavior
+- Business question handling (no delegation)
+- Technical question delegation
+- Technical Agent response quality
+- Safety and refusal behavior
 
-Once you've started your own project based on this repo, you should:
+## Customization
 
-1. **Check in your `uv.lock`**: This file is currently untracked for the template, but you should commit it to your repository for reproducible builds and proper configuration management. (The same applies to `livekit.toml`, if you run your agents in LiveKit Cloud)
+### Change Agent Voices
 
-2. **Remove the git tracking test**: Delete the "Check files not tracked in git" step from `.github/workflows/tests.yml` since you'll now want this file to be tracked. These are just there for development purposes in the template repo itself.
+Update the `voice` parameter in `TTS` initialization:
+```python
+# Browse voices at play.cartesia.ai
+tts=cartesia.TTS(
+    voice="your-voice-id-here",
+    model="sonic-3"
+)
+```
 
-3. **Add your own repository secrets**: You must [add secrets](https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-what-your-workflow-does/using-secrets-in-github-actions) for `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` so that the tests can run in CI.
+### Adjust Agent Personalities
 
-## Deploying to production
+Modify the `instructions` parameter in each Agent's `__init__`:
+```python
+class BusinessAgent(Agent):
+    def __init__(self, shared_context: ChatContext = None) -> None:
+        super().__init__(
+            instructions="Your custom instructions here...",
+            # ...
+        )
+```
 
-This project is production-ready and includes a working `Dockerfile`. To deploy it to LiveKit Cloud or another environment, see the [deploying to production](https://docs.livekit.io/agents/ops/deployment/) guide.
+### Add Custom Tools
 
-## Self-hosted LiveKit
+Use the `@function_tool` decorator:
+```python
+from livekit.agents import function_tool, RunContext
 
-You can also self-host LiveKit instead of using LiveKit Cloud. See the [self-hosting](https://docs.livekit.io/home/self-hosting/) guide for more information. If you choose to self-host, you'll need to also use [model plugins](https://docs.livekit.io/agents/models/#plugins) instead of LiveKit Inference and will need to remove the [LiveKit Cloud noise cancellation](https://docs.livekit.io/home/cloud/noise-cancellation/) plugin.
+@function_tool
+async def lookup_pricing(self, context: RunContext, product: str):
+    """Look up pricing for a specific product."""
+    # Your implementation
+    return f"Price for {product}: $99/month"
+```
+
+## Frontend Integration
+
+Use with any LiveKit-compatible frontend:
+
+- **React**: [agent-starter-react](https://github.com/livekit-examples/agent-starter-react)
+- **iOS/macOS**: [agent-starter-swift](https://github.com/livekit-examples/agent-starter-swift)
+- **Flutter**: [agent-starter-flutter](https://github.com/livekit-examples/agent-starter-flutter)
+- **React Native**: [voice-assistant-react-native](https://github.com/livekit-examples/voice-assistant-react-native)
+
+Or enable telephony: [Telephony Guide](https://docs.livekit.io/agents/start/telephony/)
+
+## Troubleshooting
+
+### Technical Agent responds too often
+**Solution**: Strengthen the "wait for delegation" instruction in Technical Agent's instructions.
+
+### Agents talk over each other
+**Solution**: Ensure only one `AgentSession` exists and `update_agent()` is used correctly.
+
+### Context not shared between agents
+**Solution**: Always pass `shared_context=self.session.chat_ctx` during agent transitions.
+
+### High latency in responses
+**Solution**: Ensure models are prewarmed in the `prewarm()` function.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - See LICENSE file for details
+
+## Support
+
+- **Documentation**: [docs.livekit.io](https://docs.livekit.io)
+- **Discord**: [livekit.io/discord](https://livekit.io/discord)
+- **GitHub**: [github.com/livekit](https://github.com/livekit)

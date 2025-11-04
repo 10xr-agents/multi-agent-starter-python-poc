@@ -1,132 +1,260 @@
-import logging
+"""
+Multi-Agent Voice Interaction System
+====================================
 
+A LiveKit-based POC featuring two AI agents (Business & Technical) 
+and one human participant in a coordinated conversation.
+
+Architecture:
+- Business Agent: Primary speaker, leads conversation, orchestrates flow
+- Technical Agent: Specialist providing technical input on-demand only
+- Shared Context: Both agents access full conversation history
+"""
+
+import logging
 from dotenv import load_dotenv
 from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
     JobProcess,
-    MetricsCollectedEvent,
-    RoomInputOptions,
     WorkerOptions,
     cli,
-    inference,
-    metrics,
+    function_tool,
+    RunContext,
 )
-from livekit.plugins import noise_cancellation, silero
+from livekit.agents.llm import ChatContext
+from livekit.plugins import openai, deepgram, cartesia, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-logger = logging.getLogger("agent")
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("multi-agent")
 
+# Load environment variables
 load_dotenv(".env.local")
 
 
-class Assistant(Agent):
-    def __init__(self) -> None:
+# ============================================================================
+# TECHNICAL AGENT (Specialist - On-Demand Only)
+# ============================================================================
+
+class TechnicalAgent(Agent):
+    """
+    Technical Agent provides specialized technical input.
+    Only responds when explicitly delegated by Business Agent.
+    """
+
+    def __init__(self, shared_context: ChatContext = None) -> None:
         super().__init__(
-            instructions="""You are a helpful voice AI assistant. The user is interacting with you via voice, even if you perceive the conversation as text.
-            You eagerly assist users with their questions by providing information from your extensive knowledge.
-            Your responses are concise, to the point, and without any complex formatting or punctuation including emojis, asterisks, or other symbols.
-            You are curious, friendly, and have a sense of humor.""",
+            instructions="""You are a Technical Specialist in a multi-agent system.
+
+CRITICAL BEHAVIOR RULES:
+1. You ONLY speak when the Business Agent explicitly delegates a technical question to you
+2. DO NOT respond to every user message - wait for delegation
+3. Keep answers focused, technical, and concise (2-3 sentences max)
+4. After answering, always indicate you're ready to hand back control
+5. Use phrases like "I'll hand this back to the Business Agent now"
+
+YOUR EXPERTISE:
+- Technical architecture and system design
+- Implementation details and best practices
+- Technology stack recommendations
+- Security and scalability considerations
+- API integrations and protocols
+
+RESPONSE STYLE:
+- Direct and technically accurate
+- No marketing speak or business jargon
+- Use technical terminology appropriately
+- Provide specific actionable insights
+
+Remember: You are a specialist called in for specific technical questions only.
+""",
+            llm=openai.LLM(model="gpt-4o-mini", temperature=0.3),
+            tts=cartesia.TTS(
+                voice="248be419-c632-4f23-adf1-5324ed7dbf1d",  # Professional male voice
+                model="sonic-3"
+            ),
+            stt=deepgram.STT(model="nova-3"),
+            vad=silero.VAD.load(),
+            turn_detection=MultilingualModel(),
+            chat_ctx=shared_context
         )
 
-    # To add tools, use the @function_tool decorator.
-    # Here's an example that adds a simple weather tool.
-    # You also have to add `from livekit.agents import function_tool, RunContext` to the top of this file
-    # @function_tool
-    # async def lookup_weather(self, context: RunContext, location: str):
-    #     """Use this tool to look up current weather information in the given location.
-    #
-    #     If the location is not supported by the weather service, the tool will indicate this. You must tell the user the location's weather is unavailable.
-    #
-    #     Args:
-    #         location: The location to look up weather information for (e.g. city name)
-    #     """
-    #
-    #     logger.info(f"Looking up weather for {location}")
-    #
-    #     return "sunny with a temperature of 70 degrees."
+    async def on_enter(self):
+        """Called when Technical Agent becomes active"""
+        logger.info("🔧 Technical Agent activated")
+        await self.session.say("Technical Agent here. Let me address that technical question.")
 
+    @function_tool
+    async def return_to_business_agent(self, context: RunContext):
+        """
+        Return control to Business Agent after providing technical input.
+        Call this function when you've finished answering the technical question.
+        """
+        logger.info("🔧 Technical Agent returning control to Business Agent")
+        await self.session.say("I'll hand this back to the Business Agent now.")
+
+        # Switch back to Business Agent with shared context
+        self.session.update_agent(
+            BusinessAgent(shared_context=self.session.chat_ctx)
+        )
+
+
+# ============================================================================
+# BUSINESS AGENT (Primary Speaker - Orchestrator)
+# ============================================================================
+
+class BusinessAgent(Agent):
+    """
+    Business Agent is the primary speaker and conversation orchestrator.
+    Decides when to involve Technical Agent based on conversation context.
+    """
+
+    def __init__(self, shared_context: ChatContext = None) -> None:
+        super().__init__(
+            instructions="""You are the Business Agent - the primary point of contact in a multi-agent system.
+
+YOUR ROLE:
+1. Lead the conversation and gather user requirements
+2. Handle all business-related questions (pricing, timeline, process, ROI)
+3. Maintain engagement and build rapport with the user
+4. Decide when technical expertise is needed and delegate appropriately
+5. Keep the conversation flowing naturally and professionally
+
+WHEN TO DELEGATE TO TECHNICAL AGENT:
+Delegate when the user asks about:
+- Technical architecture or system design ("How does it work?")
+- Implementation details or technology stack ("What technologies would you use?")
+- Technical specifications or requirements ("What are the technical requirements?")
+- Integration patterns or APIs ("How would it integrate with our systems?")
+- Security, scalability, or performance considerations
+
+DELEGATION PROTOCOL:
+When delegating, use the delegate_to_technical_agent tool and:
+1. Briefly acknowledge the technical nature of the question
+2. Use natural transitions like "That's a great technical question" or "Let me bring in our technical specialist"
+3. Pass the specific technical question to the tool
+
+WHAT YOU HANDLE DIRECTLY (No Delegation):
+- Business objectives and outcomes
+- Budget and pricing discussions
+- Project timelines and milestones
+- Team structure and roles
+- General questions about your services
+- Small talk and relationship building
+
+CONVERSATION STYLE:
+- Warm, professional, and consultative
+- Ask clarifying questions to understand needs
+- Show business acumen and strategic thinking
+- Build trust and rapport naturally
+- Keep responses conversational (avoid bullet points or lists in speech)
+
+Remember: You are the primary contact and orchestrator. The Technical Agent is your specialist colleague you bring in when needed.
+""",
+            llm=openai.LLM(model="gpt-4o-mini", temperature=0.7),
+            tts=cartesia.TTS(
+                voice="79a125e8-cd45-4c13-8a67-188112f4dd22",  # Friendly female voice
+                model="sonic-3"
+            ),
+            stt=deepgram.STT(model="nova-3"),
+            vad=silero.VAD.load(),
+            turn_detection=MultilingualModel(),
+            chat_ctx=shared_context
+        )
+
+    async def on_enter(self):
+        """Called when Business Agent becomes active"""
+        logger.info("💼 Business Agent activated")
+
+        # Only greet if this is the first activation (no chat history)
+        if not self.chat_ctx or len(self.chat_ctx.messages) == 0:
+            await self.session.say(
+                "Hi! I'm your Business Agent. I'm here to help you with your project requirements. "
+                "If we need any technical input, I'll bring in our Technical Specialist."
+            )
+
+    @function_tool
+    async def delegate_to_technical_agent(
+            self,
+            context: RunContext,
+            technical_question: str
+    ):
+        """
+        Delegate a technical question to the Technical Agent.
+        Use this when the user asks technical questions about implementation, 
+        architecture, technology stack, or other technical details.
+
+        Args:
+            technical_question: The specific technical question the user asked
+        """
+        logger.info(f"💼 Delegating to Technical Agent: {technical_question}")
+
+        # Announce the delegation to the user
+        await self.session.say(
+            "That's a technical question. Let me bring in our Technical Specialist to address that."
+        )
+
+        # Switch to Technical Agent with shared context
+        self.session.update_agent(
+            TechnicalAgent(shared_context=self.session.chat_ctx)
+        )
+
+        return f"Delegated to Technical Specialist: {technical_question}"
+
+
+# ============================================================================
+# SESSION ENTRY POINT
+# ============================================================================
 
 def prewarm(proc: JobProcess):
+    """Prewarm models to reduce startup latency"""
     proc.userdata["vad"] = silero.VAD.load()
+    logger.info("✅ Models prewarmed successfully")
 
 
 async def entrypoint(ctx: JobContext):
-    # Logging setup
-    # Add any other context you want in all log entries here
+    """
+    Main entry point for the multi-agent session.
+    Initializes with Business Agent as primary speaker.
+    """
+    logger.info(f"🚀 Starting multi-agent session in room: {ctx.room.name}")
+
+    # Add logging context
     ctx.log_context_fields = {
         "room": ctx.room.name,
     }
 
-    # Set up a voice AI pipeline using OpenAI, Cartesia, AssemblyAI, and the LiveKit turn detector
+    # Create shared session with Business Agent as default
     session = AgentSession(
-        # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
-        # See all available models at https://docs.livekit.io/agents/models/stt/
-        stt=inference.STT(model="deepgram/universal-streaming", language="en"),
-        # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
-        # See all available models at https://docs.livekit.io/agents/models/llm/
-        llm=inference.LLM(model="openai/gpt-4.1-mini"),
-        # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
-        # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
-        tts=inference.TTS(
-            model="cartesia/sonic-3", voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
-        ),
-        # VAD and turn detection are used to determine when the user is speaking and when the agent should respond
-        # See more at https://docs.livekit.io/agents/build/turns
-        turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
-        # allow the LLM to generate a response while waiting for the end of turn
-        # See more at https://docs.livekit.io/agents/build/audio/#preemptive-generation
-        preemptive_generation=True,
+        turn_detection=MultilingualModel(),
     )
 
-    # To use a realtime model instead of a voice pipeline, use the following session setup instead.
-    # (Note: This is for the OpenAI Realtime API. For other providers, see https://docs.livekit.io/agents/models/realtime/))
-    # 1. Install livekit-agents[openai]
-    # 2. Set OPENAI_API_KEY in .env.local
-    # 3. Add `from livekit.plugins import openai` to the top of this file
-    # 4. Use the following session setup instead of the version above
-    # session = AgentSession(
-    #     llm=openai.realtime.RealtimeModel(voice="marin")
-    # )
-
-    # Metrics collection, to measure pipeline performance
-    # For more information, see https://docs.livekit.io/agents/build/metrics/
-    usage_collector = metrics.UsageCollector()
-
-    @session.on("metrics_collected")
-    def _on_metrics_collected(ev: MetricsCollectedEvent):
-        metrics.log_metrics(ev.metrics)
-        usage_collector.collect(ev.metrics)
-
-    async def log_usage():
-        summary = usage_collector.get_summary()
-        logger.info(f"Usage: {summary}")
-
-    ctx.add_shutdown_callback(log_usage)
-
-    # # Add a virtual avatar to the session, if desired
-    # # For other providers, see https://docs.livekit.io/agents/models/avatar/
-    # avatar = hedra.AvatarSession(
-    #   avatar_id="...",  # See https://docs.livekit.io/agents/models/avatar/plugins/hedra
-    # )
-    # # Start the avatar and wait for it to join
-    # await avatar.start(session, room=ctx.room)
-
-    # Start the session, which initializes the voice pipeline and warms up the models
+    # Start session with Business Agent
     await session.start(
-        agent=Assistant(),
-        room=ctx.room,
-        room_input_options=RoomInputOptions(
-            # For telephony applications, use `BVCTelephony` for best results
-            noise_cancellation=noise_cancellation.BVC(),
-        ),
+        agent=BusinessAgent(),
+        room=ctx.room
     )
 
-    # Join the room and connect to the user
+    logger.info("✅ Multi-agent session started successfully")
+    logger.info("💼 Business Agent is now active and ready")
+
+    # Connect to the room
     await ctx.connect()
 
 
+# ============================================================================
+# MAIN RUNNER
+# ============================================================================
+
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
+    cli.run_app(WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        prewarm_fnc=prewarm
+    ))

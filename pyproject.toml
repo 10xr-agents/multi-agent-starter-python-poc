@@ -3,14 +3,16 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-starter-python"
+name = "multi-agent-voice-poc"
 version = "1.0.0"
-description = "Simple voice AI assistant built with LiveKit Agents for Python"
+description = "Multi-agent voice interaction system with Business and Technical agents"
 requires-python = ">=3.9"
 
 dependencies = [
     "livekit-agents[silero,turn-detector]~=1.2",
-    "livekit-plugins-noise-cancellation~=0.2",
+    "livekit-plugins-openai~=1.2",
+    "livekit-plugins-deepgram~=1.2",
+    "livekit-plugins-cartesia~=1.2",
     "python-dotenv",
 ]
 
@@ -37,7 +39,7 @@ target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "B", "A", "C4", "UP", "SIM", "RUF"]
-ignore = ["E501"]  # Line too long (handled by formatter)
+ignore = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"
