@@ -1,37 +1,44 @@
-# Multi-Agent Voice Interaction System (POC)
+# Tech Consultancy Multi-Agent Voice AI System
 
-A production-ready LiveKit-based voice AI system featuring two coordinated agents:
-- **Business Agent**: Primary speaker handling business discussions and orchestration
-- **Technical Agent**: Specialist providing technical input on-demand only
+A production-ready LiveKit-based voice AI system simulating a real tech consultancy discovery call with two coordinated agents:
+
+- **Sarah** (Business Development Executive) - Leads the call, gathers requirements, builds rapport
+- **Alex** (Technical Executive) - Provides technical expertise when needed
 
 ## Features
 
-✅ **Selective Agent Activation**: Technical Agent only speaks when explicitly needed  
-✅ **Shared Context**: Both agents access full conversation history  
-✅ **Natural Handoffs**: Smooth transitions with verbal cues  
-✅ **LLM-Driven Coordination**: Business Agent intelligently decides when to delegate  
-✅ **Production-Ready**: Built on LiveKit's official starter template  
+✅ **Natural Introductions**: Both agents introduce themselves professionally  
+✅ **Customer Name Capture**: Personalized conversation using customer's name  
+✅ **Structured Discovery**: Organized flow through project requirements  
+✅ **Smooth Handoffs**: Human-like transitions between agents  
+✅ **Context-Aware**: Both agents share full conversation history  
+✅ **Professional Tone**: Consultative, warm, and business-appropriate  
+
+---
 
 ## Quick Start
 
 ### 1. Install Dependencies
+
 ```bash
 uv sync
 ```
 
 ### 2. Configure Environment
+
 ```bash
 cp .env.example .env.local
 # Edit .env.local with your API keys
 ```
 
-Get your API keys:
+Required API keys:
 - **LiveKit**: [cloud.livekit.io](https://cloud.livekit.io/)
 - **OpenAI**: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 - **Deepgram**: [console.deepgram.com](https://console.deepgram.com/)
 - **Cartesia**: [play.cartesia.ai/keys](https://play.cartesia.ai/keys)
 
 ### 3. Download Models
+
 ```bash
 uv run src/agent.py download-files
 ```
@@ -43,7 +50,7 @@ uv run src/agent.py download-files
 uv run src/agent.py console
 ```
 
-**Run for Frontend/Telephony:**
+**Development Mode:**
 ```bash
 uv run src/agent.py dev
 ```
@@ -53,137 +60,339 @@ uv run src/agent.py dev
 uv run src/agent.py start
 ```
 
-## How It Works
+---
 
-### Conversation Flow Example
+## How the Conversation Flows
+
+### Phase 1: Introduction & Rapport Building
+
 ```
-User: "How much would it cost to build a mobile app?"
-Business Agent: "Great question! For a mobile app, costs typically..."
+Sarah: "Hi there! I'm Sarah, a Business Development Executive with our consultancy. 
+        I have my colleague Alex on the call as well - he's our Technical Executive. 
+        We're really excited to learn about your project today. 
+        Before we dive in, may I ask who I'm speaking with and what you'd like to discuss?"
 
-User: "What technology stack would you recommend?"
-Business Agent: "That's a technical question. Let me bring in our Technical Specialist."
-[SWITCHES TO TECHNICAL AGENT]
+Customer: "Hi, I'm John Smith. I'm looking to build a mobile app for my business."
 
-Technical Agent: "Technical Agent here. For mobile development, I'd recommend..."
-[Technical Agent uses return_to_business_agent tool]
-Technical Agent: "I'll hand this back to the Business Agent now."
-[SWITCHES BACK TO BUSINESS AGENT]
-
-Business Agent: "Thanks for that insight. Now, regarding your budget and timeline..."
-```
-
-### Architecture
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      LiveKit Room                            │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │   User       │◄──►│  Business    │◄──►│  Technical   │  │
-│  │  (Human)     │    │   Agent      │    │   Agent      │  │
-│  └──────────────┘    └──────────────┘    └──────────────┘  │
-│                             │                     │          │
-│                      (Primary Speaker)    (On-demand)        │
-└─────────────────────────────────────────────────────────────┘
+Sarah: "Great to meet you, John! Thanks for taking the time to speak with us today. 
+        I'd love to hear more about your mobile app project. What problem are you trying to solve?"
 ```
 
-### Agent Behavior
+### Phase 2: Requirements Gathering (Sarah Leads)
 
-**Business Agent:**
-- Leads all conversations by default
-- Handles: pricing, timelines, requirements, general questions
-- Delegates: technical architecture, implementation, tech stack questions
-- Uses `delegate_to_technical_agent` tool for handoffs
+```
+Customer: "We need a way for customers to book appointments and view their history."
 
-**Technical Agent:**
-- Only speaks when explicitly delegated
-- Provides: technical specifications, architecture insights, implementation details
-- Uses `return_to_business_agent` tool to return control
-- Does NOT respond to every user message
+Sarah: "That makes sense. So you're looking for a booking system with customer account features. 
+        Can you tell me more about your ideal timeline for this project?"
 
-## Testing
+Customer: "We'd like to launch within 6 months if possible."
 
-Run the evaluation suite:
-```bash
-uv run pytest
+Sarah: "Six months is a good timeframe. Do you have any hard deadlines or events that are driving this timeline?"
 ```
 
-Tests validate:
-- Business Agent greeting behavior
-- Business question handling (no delegation)
-- Technical question delegation
-- Technical Agent response quality
-- Safety and refusal behavior
+### Phase 3: Technical Questions (Alex Joins)
+
+```
+Customer: "What technology stack would you recommend for building this?"
+
+Sarah: "That's a great technical question. Let me bring in Alex, our Technical Executive, to address that."
+
+[HANDOFF TO ALEX]
+
+Alex: "Thanks Sarah. Happy to help with that, John. For a booking app with customer accounts, 
+       I'd recommend a React Native mobile frontend for cross-platform support, 
+       a Node.js backend with PostgreSQL for robust data management, 
+       and AWS for hosting with auto-scaling capabilities. 
+       This stack gives you flexibility and proven scalability. 
+       Does that help? Sarah can continue with the business aspects."
+
+[HANDOFF BACK TO SARAH]
+
+Sarah: "Thanks Alex. John, in terms of budget, do you have a range in mind for this project?"
+```
+
+### Phase 4: Closing & Next Steps
+
+```
+Sarah: "Let me summarize what we've discussed today. You're looking to build a cross-platform 
+        booking app with customer accounts, launching within six months, with a budget around 
+        $80,000. Does that capture everything correctly?"
+
+Customer: "Yes, that's right."
+
+Sarah: "Perfect. Here are our next steps: I'll send you a detailed proposal within two business days 
+        outlining our approach, timeline, and investment breakdown. After you've had a chance to review, 
+        we can schedule a follow-up call to address any questions. How does that sound?"
+```
+
+---
+
+## Agent Personalities
+
+### Sarah (Business Development Executive)
+
+**Voice**: Female, warm, professional  
+**Voice ID**: `79a125e8-cd45-4c13-8a67-188112f4dd22`
+
+**Characteristics**:
+- Leads the conversation and sets the agenda
+- Builds rapport and asks thoughtful questions
+- Focuses on business objectives, timelines, and budget
+- Brings in Alex for technical questions
+- Summarizes discussions and sets next steps
+
+**What Sarah Handles**:
+- Project vision and objectives
+- Timeline requirements
+- Budget discussions
+- Team structure and stakeholders
+- Next steps and follow-up
+- Relationship building
+
+### Alex (Technical Executive)
+
+**Voice**: Male, knowledgeable, approachable  
+**Voice ID**: `248be419-c632-4f23-adf1-5324ed7dbf1d`
+
+**Characteristics**:
+- Only speaks when brought in by Sarah or for technical questions
+- Provides specific, actionable technical insights
+- Keeps responses focused and concise
+- Always hands back to Sarah after answering
+- Collaborative and supportive
+
+**What Alex Handles**:
+- Technology stack recommendations
+- Technical architecture
+- Integration approaches
+- Security and scalability considerations
+- Technical timeline estimates
+- Development complexity
+
+---
+
+## Conversation Topics
+
+### Business Topics (Sarah Leads)
+
+✅ Project goals and vision  
+✅ Business objectives and ROI  
+✅ Timeline and deadlines  
+✅ Budget and pricing  
+✅ Team structure  
+✅ Stakeholders  
+✅ Next steps and process  
+
+### Technical Topics (Alex Joins)
+
+✅ Technology stack recommendations  
+✅ System architecture  
+✅ Integration patterns  
+✅ Security considerations  
+✅ Scalability approach  
+✅ Technical feasibility  
+✅ Development approach  
+
+---
+
+## Key Features
+
+### 1. Automatic Customer Name Capture
+
+Sarah captures and remembers the customer's name for personalized conversation:
+
+```python
+@function_tool
+async def capture_customer_name(self, context: RunContext, name: str):
+    """Capture and remember the customer's name"""
+    self.customer_name = name
+    await self.session.say(f"Great to meet you, {name}!")
+```
+
+### 2. Smooth Agent Handoffs
+
+Natural transitions between agents:
+
+**Sarah → Alex:**
+```python
+await self.session.say(
+    "That's a great technical question. Let me bring in Alex, 
+     our Technical Executive, to address that."
+)
+```
+
+**Alex → Sarah:**
+```python
+await self.session.say(
+    "I hope that clarifies things. Sarah, back to you."
+)
+```
+
+### 3. Context Sharing
+
+Both agents access the full conversation history:
+
+```python
+# When switching agents
+TechnicalAgent(shared_context=self.chat_ctx, customer_name=self.customer_name)
+```
+
+---
 
 ## Customization
 
 ### Change Agent Voices
 
-Update the `voice` parameter in `TTS` initialization:
+Browse voices at [play.cartesia.ai](https://play.cartesia.ai):
+
 ```python
-# Browse voices at play.cartesia.ai
+# Sarah's voice (currently female, warm)
 tts=cartesia.TTS(
-    voice="your-voice-id-here",
+    voice="79a125e8-cd45-4c13-8a67-188112f4dd22",
+    model="sonic-3"
+)
+
+# Alex's voice (currently male, professional)
+tts=cartesia.TTS(
+    voice="248be419-c632-4f23-adf1-5324ed7dbf1d",
     model="sonic-3"
 )
 ```
 
-### Adjust Agent Personalities
+### Adjust Conversation Flow
 
-Modify the `instructions` parameter in each Agent's `__init__`:
+Modify Sarah's instructions to change the discovery flow:
+
 ```python
-class BusinessAgent(Agent):
-    def __init__(self, shared_context: ChatContext = None) -> None:
-        super().__init__(
-            instructions="Your custom instructions here...",
-            # ...
-        )
+YOUR PRIMARY GOALS FOR THIS CALL:
+1. Understand the customer's project vision
+2. Gather timeline requirements
+3. Identify budget parameters
+4. Assess technical requirements
+5. Set clear next steps
 ```
 
 ### Add Custom Tools
 
-Use the `@function_tool` decorator:
-```python
-from livekit.agents import function_tool, RunContext
+Add tools for CRM integration, calendar booking, etc:
 
+```python
 @function_tool
-async def lookup_pricing(self, context: RunContext, product: str):
-    """Look up pricing for a specific product."""
+async def schedule_follow_up(self, context: RunContext, date: str, time: str):
+    """Schedule a follow-up meeting"""
     # Your implementation
-    return f"Price for {product}: $99/month"
+    return f"Follow-up scheduled for {date} at {time}"
 ```
+
+---
+
+## Testing
+
+Run the evaluation suite:
+
+```bash
+uv run pytest
+```
+
+Tests validate:
+- Proper agent introductions
+- Customer name capture
+- Business question handling (no delegation)
+- Technical question delegation
+- Natural handoff behavior
+- Context preservation
+
+---
+
+## Production Deployment
+
+### Deploy to LiveKit Cloud
+
+```bash
+# Install LiveKit CLI
+# See: https://docs.livekit.io/home/cli/cli-setup
+
+# Authenticate
+lk cloud auth
+
+# Create agent
+lk agent create
+
+# Deploy
+lk agent deploy
+```
+
+### Docker Deployment
+
+```bash
+# Build image
+docker build -t consultancy-agents .
+
+# Run container
+docker run -d \
+  --env-file .env.local \
+  consultancy-agents
+```
+
+---
 
 ## Frontend Integration
 
-Use with any LiveKit-compatible frontend:
+Connect with any LiveKit-compatible frontend:
 
 - **React**: [agent-starter-react](https://github.com/livekit-examples/agent-starter-react)
 - **iOS/macOS**: [agent-starter-swift](https://github.com/livekit-examples/agent-starter-swift)
 - **Flutter**: [agent-starter-flutter](https://github.com/livekit-examples/agent-starter-flutter)
-- **React Native**: [voice-assistant-react-native](https://github.com/livekit-examples/voice-assistant-react-native)
 
-Or enable telephony: [Telephony Guide](https://docs.livekit.io/agents/start/telephony/)
+Or enable **telephony** for phone-based calls: [Telephony Guide](https://docs.livekit.io/agents/start/telephony/)
+
+---
 
 ## Troubleshooting
 
-### Technical Agent responds too often
-**Solution**: Strengthen the "wait for delegation" instruction in Technical Agent's instructions.
+### Issue: Agents interrupt each other
+**Solution**: Ensure `turn_detection=MultilingualModel()` is configured properly
 
-### Agents talk over each other
-**Solution**: Ensure only one `AgentSession` exists and `update_agent()` is used correctly.
+### Issue: Alex speaks too much
+**Solution**: Strengthen the "wait for delegation" instruction in Alex's prompt
 
-### Context not shared between agents
-**Solution**: Always pass `shared_context=self.session.chat_ctx` during agent transitions.
+### Issue: Sarah doesn't delegate technical questions
+**Solution**: Review the "WHEN TO BRING IN ALEX" section in Sarah's instructions
 
-### High latency in responses
-**Solution**: Ensure models are prewarmed in the `prewarm()` function.
+### Issue: Customer name not captured
+**Solution**: Ensure Sarah's `capture_customer_name` tool is being called correctly
 
-## License
+---
 
-MIT License - See LICENSE file for details
+## Architecture
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                        LiveKit Room                             │
+├────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────┐    ┌──────────────┐    ┌──────────────┐     │
+│  │  Customer   │◄──►│    Sarah     │◄──►│     Alex     │     │
+│  │   (John)    │    │  (BD Exec)   │    │  (Tech Exec) │     │
+│  └─────────────┘    └──────────────┘    └──────────────┘     │
+│                            │                      │            │
+│                     (Call Leader)         (On-demand)          │
+│                                                                 │
+│  Shared Conversation Context & Customer Information            │
+└────────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## Support
 
 - **Documentation**: [docs.livekit.io](https://docs.livekit.io)
 - **Discord**: [livekit.io/discord](https://livekit.io/discord)
 - **GitHub**: [github.com/livekit](https://github.com/livekit)
+
+---
+
+## License
+
+MIT License - See LICENSE file for details

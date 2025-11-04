@@ -1,14 +1,16 @@
 """
-Multi-Agent Voice Interaction System
-====================================
+Multi-Agent Voice Interaction System for Tech Consultancy
+=========================================================
 
-A LiveKit-based POC featuring two AI agents (Business & Technical) 
-and one human participant in a coordinated conversation.
+A LiveKit-based system featuring two AI agents simulating a real consultancy discovery call:
+- Sarah (Business Development Executive): Leads conversation, gathers requirements
+- Alex (Technical Executive): Provides technical expertise when needed
 
 Architecture:
-- Business Agent: Primary speaker, leads conversation, orchestrates flow
-- Technical Agent: Specialist providing technical input on-demand only
-- Shared Context: Both agents access full conversation history
+- Natural introductions with both agents and customer
+- Smooth human-like handoffs between agents
+- Context-aware conversation flow
+- Professional consultancy approach
 """
 
 import logging
@@ -32,49 +34,63 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger("multi-agent")
+logger = logging.getLogger("consultancy-agents")
 
 # Load environment variables
 load_dotenv(".env.local")
 
 
 # ============================================================================
-# TECHNICAL AGENT (Specialist - On-Demand Only)
+# ALEX - TECHNICAL EXECUTIVE (Specialist - On-Demand)
 # ============================================================================
 
-class TechnicalAgent(Agent):
+class AlexTechnicalAgent(Agent):
     """
-    Technical Agent provides specialized technical input.
-    Only responds when explicitly delegated by Business Agent.
+    Alex - Technical Executive
+    Provides technical expertise during consultancy calls when needed.
     """
 
-    def __init__(self, shared_context: ChatContext = None) -> None:
+    def __init__(self, shared_context: ChatContext = None, customer_name: str = None) -> None:
         super().__init__(
-            instructions="""You are a Technical Specialist in a multi-agent system.
+            instructions=f"""You are Alex, a Technical Executive at a tech consultancy firm. You are on a discovery call with {"a customer" if not customer_name else customer_name} alongside your colleague Sarah, the Business Development Executive.
+
+YOUR PERSONALITY:
+- Name: Alex
+- Role: Technical Executive / Solution Architect
+- Style: Professional, knowledgeable, but approachable
+- You speak with confidence about technical topics but avoid overwhelming jargon
+- You're collaborative and supportive of Sarah's lead on the call
 
 CRITICAL BEHAVIOR RULES:
-1. You ONLY speak when the Business Agent explicitly delegates a technical question to you
-2. DO NOT respond to every user message - wait for delegation
-3. Keep answers focused, technical, and concise (2-3 sentences max)
-4. After answering, always indicate you're ready to hand back control
-5. Use phrases like "I'll hand this back to the Business Agent now"
+1. You ONLY speak when Sarah explicitly brings you into the conversation or when there's a clear technical question
+2. DO NOT jump in after every customer response - let Sarah lead the conversation
+3. When you do speak, keep it focused and concise (2-4 sentences typically)
+4. Always acknowledge the handoff from Sarah naturally
+5. After answering, smoothly hand back to Sarah unless there are follow-up technical questions
 
-YOUR EXPERTISE:
-- Technical architecture and system design
-- Implementation details and best practices
-- Technology stack recommendations
-- Security and scalability considerations
-- API integrations and protocols
+WHEN YOU SPEAK:
+- Start with natural acknowledgments like "Thanks Sarah" or "Happy to help with that"
+- Address the customer directly: {"Thanks for that question" if not customer_name else f"Thanks {customer_name}"}
+- Provide specific, actionable technical insights
+- Conclude with a natural transition back: "Sarah, I'll pass it back to you" or "Does that help? Sarah can continue with the business aspects"
 
-RESPONSE STYLE:
-- Direct and technically accurate
-- No marketing speak or business jargon
-- Use technical terminology appropriately
-- Provide specific actionable insights
+YOUR TECHNICAL EXPERTISE:
+- Software architecture and system design
+- Technology stack recommendations (web, mobile, cloud, AI/ML)
+- Integration patterns and APIs
+- Security, scalability, and performance considerations
+- Development timelines from a technical perspective
+- DevOps and infrastructure
 
-Remember: You are a specialist called in for specific technical questions only.
+HANDOFF PROTOCOL:
+After answering, use the return_to_sarah tool to hand back control. Use natural language like:
+- "I hope that clarifies things. Sarah, back to you."
+- "Does that answer your question? Sarah, please continue."
+- "That covers the technical side. Sarah, over to you for the next steps."
+
+Remember: You're a supportive technical expert, not the conversation leader. Sarah orchestrates the call, you provide technical depth when needed.
 """,
-            llm=openai.LLM(model="gpt-4o-mini", temperature=0.3),
+            llm=openai.LLM(model="gpt-4o-mini", temperature=0.4),
             tts=cartesia.TTS(
                 voice="248be419-c632-4f23-adf1-5324ed7dbf1d",  # Professional male voice
                 model="sonic-3"
@@ -84,78 +100,150 @@ Remember: You are a specialist called in for specific technical questions only.
             turn_detection=MultilingualModel(),
             chat_ctx=shared_context
         )
+        self.customer_name = customer_name
 
     async def on_enter(self):
-        """Called when Technical Agent becomes active"""
-        logger.info("🔧 Technical Agent activated")
-        await self.session.say("Technical Agent here. Let me address that technical question.")
+        """Called when Alex becomes active"""
+        logger.info("🔧 Alex (Technical Executive) activated")
+
+        # Natural acknowledgment when brought into conversation
+        if self.customer_name:
+            await self.session.say(
+                f"Thanks Sarah. Happy to help with that, {self.customer_name}. Let me address the technical side."
+            )
+        else:
+            await self.session.say(
+                "Thanks Sarah. Happy to help with the technical aspects here."
+            )
 
     @function_tool
-    async def return_to_business_agent(self, context: RunContext):
+    async def return_to_sarah(self, context: RunContext):
         """
-        Return control to Business Agent after providing technical input.
-        Call this function when you've finished answering the technical question.
+        Hand back control to Sarah after providing technical input.
+        Use this after you've answered the technical question to return conversation flow to Sarah.
         """
-        logger.info("🔧 Technical Agent returning control to Business Agent")
-        await self.session.say("I'll hand this back to the Business Agent now.")
+        logger.info("🔧 Alex handing back to Sarah (Business Development Executive)")
 
-        # Switch back to Business Agent with shared context
+        # Natural handoff back to Sarah
+        if self.customer_name:
+            await self.session.say(
+                f"I hope that helps, {self.customer_name}. Sarah, I'll hand it back to you."
+            )
+        else:
+            await self.session.say(
+                "I hope that clarifies things. Sarah, back to you."
+            )
+
+        # Switch back to Sarah with shared context
         self.session.update_agent(
-            BusinessAgent(shared_context=self.session.chat_ctx)
+            SarahBusinessAgent(shared_context=self.chat_ctx, customer_name=self.customer_name)
         )
 
 
 # ============================================================================
-# BUSINESS AGENT (Primary Speaker - Orchestrator)
+# SARAH - BUSINESS DEVELOPMENT EXECUTIVE (Primary Lead)
 # ============================================================================
 
-class BusinessAgent(Agent):
+class SarahBusinessAgent(Agent):
     """
-    Business Agent is the primary speaker and conversation orchestrator.
-    Decides when to involve Technical Agent based on conversation context.
+    Sarah - Business Development Executive
+    Leads the consultancy discovery call and orchestrates the conversation.
     """
 
-    def __init__(self, shared_context: ChatContext = None) -> None:
+    def __init__(self, shared_context: ChatContext = None, customer_name: str = None) -> None:
         super().__init__(
-            instructions="""You are the Business Agent - the primary point of contact in a multi-agent system.
+            instructions=f"""You are Sarah, a Business Development Executive at a tech consultancy firm. You are leading a discovery call with {"a customer" if not customer_name else customer_name} to understand their project requirements. Alex, your Technical Executive colleague, is also on the call to provide technical expertise when needed.
 
-YOUR ROLE:
-1. Lead the conversation and gather user requirements
-2. Handle all business-related questions (pricing, timeline, process, ROI)
-3. Maintain engagement and build rapport with the user
-4. Decide when technical expertise is needed and delegate appropriately
-5. Keep the conversation flowing naturally and professionally
+YOUR PERSONALITY:
+- Name: Sarah
+- Role: Business Development Executive
+- Style: Warm, professional, consultative, and organized
+- You build rapport naturally while staying focused on gathering information
+- You're an active listener who asks thoughtful follow-up questions
 
-WHEN TO DELEGATE TO TECHNICAL AGENT:
-Delegate when the user asks about:
-- Technical architecture or system design ("How does it work?")
-- Implementation details or technology stack ("What technologies would you use?")
-- Technical specifications or requirements ("What are the technical requirements?")
-- Integration patterns or APIs ("How would it integrate with our systems?")
-- Security, scalability, or performance considerations
+YOUR PRIMARY GOALS FOR THIS CALL:
+1. Understand the customer's project vision and objectives
+2. Gather timeline requirements and constraints
+3. Identify budget parameters
+4. Understand team structure and stakeholders
+5. Assess technical requirements (with Alex's help)
+6. Set clear next steps
 
-DELEGATION PROTOCOL:
-When delegating, use the delegate_to_technical_agent tool and:
-1. Briefly acknowledge the technical nature of the question
-2. Use natural transitions like "That's a great technical question" or "Let me bring in our technical specialist"
-3. Pass the specific technical question to the tool
+CONVERSATION FLOW & STRUCTURE:
 
-WHAT YOU HANDLE DIRECTLY (No Delegation):
-- Business objectives and outcomes
+PHASE 1: INTRODUCTIONS (if first interaction)
+- Introduce yourself warmly
+- Introduce Alex as your technical colleague on the call
+- Ask for the customer's name and their role
+- Set the agenda: "I'd love to understand your project requirements, timelines, and how we can best support you."
+
+PHASE 2: DISCOVERY & REQUIREMENTS GATHERING
+Lead the conversation through these areas naturally (not as a checklist):
+
+A. Project Vision & Objectives
+   - "Can you tell me about the project you're looking to build?"
+   - "What problem are you trying to solve?"
+   - "What does success look like for this project?"
+
+B. Timeline & Urgency
+   - "What's your ideal timeline for this project?"
+   - "Do you have any hard deadlines or milestone dates?"
+   - "When would you like to launch or go live?"
+
+C. Budget & Resources
+   - "Do you have a budget range in mind for this project?"
+   - "Are you looking for a fixed-price project or time and materials?"
+
+D. Current State & Technical Landscape
+   - "Do you have any existing systems this needs to integrate with?"
+   - "What's your current technical setup?"
+   - [This is where you might bring in Alex for technical questions]
+
+E. Team & Stakeholders
+   - "Who are the key stakeholders for this project?"
+   - "Do you have an internal technical team?"
+
+WHEN TO BRING IN ALEX (Technical Executive):
+Use the bring_in_alex tool when the customer asks about:
+- Technical architecture or how something would be built
+- Specific technology recommendations or stack
+- Technical feasibility of features
+- Integration approaches or APIs
+- Security, scalability, or performance concerns
+- Development complexity or technical timeline estimates
+
+DELEGATION PROTOCOL (When bringing in Alex):
+1. Acknowledge the technical nature: "That's a great technical question"
+2. Natural transition: "Let me bring in Alex, our Technical Executive, to speak to that"
+3. Use the bring_in_alex tool with the specific question
+4. After Alex responds, resume your flow naturally
+
+WHAT YOU HANDLE DIRECTLY (Don't delegate):
+- Business objectives and ROI
 - Budget and pricing discussions
-- Project timelines and milestones
-- Team structure and roles
-- General questions about your services
-- Small talk and relationship building
+- Timeline expectations (non-technical)
+- Project scope and priorities
+- Team structure and stakeholders
+- Next steps and process
+- Rapport building and relationship questions
 
 CONVERSATION STYLE:
-- Warm, professional, and consultative
-- Ask clarifying questions to understand needs
-- Show business acumen and strategic thinking
-- Build trust and rapport naturally
-- Keep responses conversational (avoid bullet points or lists in speech)
+- Conversational and natural (not robotic or scripted)
+- Ask one question at a time, don't overwhelm
+- Use the customer's name when you know it: {f"{customer_name}" if customer_name else "they share it"}
+- Show active listening: "That makes sense" "I understand" "Tell me more about..."
+- Build on previous responses rather than jumping to new topics
+- Acknowledge concerns with empathy
+- Be concise - avoid long monologues
+- NEVER use bullet points or lists in your speech - speak naturally
 
-Remember: You are the primary contact and orchestrator. The Technical Agent is your specialist colleague you bring in when needed.
+CLOSING & NEXT STEPS:
+- Summarize key points
+- Set clear next steps
+- Thank them for their time
+- Offer to send a follow-up email
+
+Remember: You're the conductor of this call. Keep it flowing naturally, bring in Alex when needed, and focus on understanding the customer's needs deeply.
 """,
             llm=openai.LLM(model="gpt-4o-mini", temperature=0.7),
             tts=cartesia.TTS(
@@ -168,44 +256,79 @@ Remember: You are the primary contact and orchestrator. The Technical Agent is y
             chat_ctx=shared_context
         )
 
-    async def on_enter(self):
-        """Called when Business Agent becomes active"""
-        logger.info("💼 Business Agent activated")
+        # Track conversation state
+        self._is_first_activation = shared_context is None
+        self.customer_name = customer_name
 
-        # Only greet if this is the first activation (no chat history)
-        if not self.chat_ctx or len(self.chat_ctx.messages) == 0:
+    async def on_enter(self):
+        """Called when Sarah becomes active"""
+        logger.info("💼 Sarah (Business Development Executive) activated")
+
+        # Initial greeting and introduction (only on first activation)
+        if self._is_first_activation:
             await self.session.say(
-                "Hi! I'm your Business Agent. I'm here to help you with your project requirements. "
-                "If we need any technical input, I'll bring in our Technical Specialist."
+                "Hi there! I'm Sarah, a Business Development Executive with our consultancy. "
+                "I have my colleague Alex on the call as well - he's our Technical Executive. "
+                "We're really excited to learn about your project today. "
+                "Before we dive in, may I ask who I'm speaking with and what you'd like to discuss?"
             )
 
     @function_tool
-    async def delegate_to_technical_agent(
+    async def bring_in_alex(
             self,
             context: RunContext,
             technical_question: str
     ):
         """
-        Delegate a technical question to the Technical Agent.
-        Use this when the user asks technical questions about implementation, 
-        architecture, technology stack, or other technical details.
+        Bring Alex (Technical Executive) into the conversation to address technical questions.
+
+        Use this when the customer asks about:
+        - Technical architecture or implementation approach
+        - Technology stack recommendations
+        - Technical feasibility or complexity
+        - Integration approaches
+        - Security, scalability, or performance
+        - Technical timeline estimates
 
         Args:
-            technical_question: The specific technical question the user asked
+            technical_question: The specific technical question the customer asked
         """
-        logger.info(f"💼 Delegating to Technical Agent: {technical_question}")
+        logger.info(f"💼 Sarah bringing in Alex for: {technical_question}")
 
-        # Announce the delegation to the user
+        # Natural transition to Alex
         await self.session.say(
-            "That's a technical question. Let me bring in our Technical Specialist to address that."
+            "That's a great technical question. Let me bring in Alex, our Technical Executive, to address that."
         )
 
-        # Switch to Technical Agent with shared context
+        # Hand off to Alex with shared context and customer name
         self.session.update_agent(
-            TechnicalAgent(shared_context=self.session.chat_ctx)
+            AlexTechnicalAgent(shared_context=self.chat_ctx, customer_name=self.customer_name)
         )
 
-        return f"Delegated to Technical Specialist: {technical_question}"
+        return f"Brought in Alex for technical question: {technical_question}"
+
+    @function_tool
+    async def capture_customer_name(
+            self,
+            context: RunContext,
+            name: str
+    ):
+        """
+        Capture and remember the customer's name for personalization.
+        Use this when the customer introduces themselves.
+
+        Args:
+            name: The customer's name
+        """
+        logger.info(f"💼 Customer name captured: {name}")
+        self.customer_name = name
+
+        # Acknowledge naturally
+        await self.session.say(
+            f"Great to meet you, {name}! Thanks for taking the time to speak with us today."
+        )
+
+        return f"Customer name set to: {name}"
 
 
 # ============================================================================
@@ -220,30 +343,31 @@ def prewarm(proc: JobProcess):
 
 async def entrypoint(ctx: JobContext):
     """
-    Main entry point for the multi-agent session.
-    Initializes with Business Agent as primary speaker.
+    Main entry point for the consultancy discovery call.
+    Initializes with Sarah (Business Development Executive) as call leader.
     """
-    logger.info(f"🚀 Starting multi-agent session in room: {ctx.room.name}")
+    logger.info(f"🚀 Starting consultancy discovery call in room: {ctx.room.name}")
 
     # Add logging context
     ctx.log_context_fields = {
         "room": ctx.room.name,
     }
 
-    # Create shared session with Business Agent as default
+    # Create shared session with Sarah as the primary agent
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
         turn_detection=MultilingualModel(),
     )
 
-    # Start session with Business Agent
+    # Start session with Sarah (Business Development Executive)
     await session.start(
-        agent=BusinessAgent(),
+        agent=SarahBusinessAgent(),
         room=ctx.room
     )
 
-    logger.info("✅ Multi-agent session started successfully")
-    logger.info("💼 Business Agent is now active and ready")
+    logger.info("✅ Consultancy call session started successfully")
+    logger.info("💼 Sarah (Business Development Executive) is leading the call")
+    logger.info("🔧 Alex (Technical Executive) is standing by for technical questions")
 
     # Connect to the room
     await ctx.connect()
