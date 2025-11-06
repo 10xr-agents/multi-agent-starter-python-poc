@@ -1,20 +1,22 @@
 """
-Multi-Agent Voice Interaction System for Tech Consultancy
-=========================================================
+Alex - Virtual Voice Assistant with Full Conversation Tracking
+================================================================
 
-A LiveKit-based system featuring two AI agents simulating a real consultancy discovery call:
-- Sarah (Business Development Executive): Leads conversation, gathers requirements
-- Alex (Technical Executive): Provides technical expertise when needed
-
-Architecture:
-- Natural introductions with both agents and customer
-- Smooth human-like handoffs between agents
-- Context-aware conversation flow
-- Professional consultancy approach
+A LiveKit-based silent voice assistant that:
+- Listens to ALL conversation and stores it with participant identity
+- Joins calls silently without greeting
+- Activates when wake word detected ("hey alex" or "alex")
+- Uses FULL conversation history (including pre-wake word) for context
+- Returns to silent listening mode after responding
 """
 
+import re
 import logging
+from dataclasses import dataclass, field
+from typing import AsyncIterable, Optional, List, Dict
+from datetime import datetime
 from dotenv import load_dotenv
+from livekit import rtc
 from livekit.agents import (
     Agent,
     AgentSession,
@@ -26,6 +28,7 @@ from livekit.agents import (
     RunContext,
 )
 from livekit.agents.llm import ChatContext
+from livekit.agents.voice.agent_activity import StopResponse
 from livekit.plugins import openai, deepgram, cartesia, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
@@ -34,220 +37,160 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger("consultancy-agents")
+logger = logging.getLogger("alex-assistant")
 
 # Load environment variables
 load_dotenv(".env.local")
 
+# Wake word configuration
+WAKE_WORDS = ["hey alex", "alex"]
+
 
 # ============================================================================
-# ALEX - TECHNICAL EXECUTIVE (Specialist - On-Demand)
+# USER DATA - Stores conversation history and participant info
 # ============================================================================
 
-class AlexTechnicalAgent(Agent):
+@dataclass
+class ConversationTurn:
+    """Represents a single turn in the conversation"""
+    timestamp: str
+    participant_identity: str
+    participant_name: str
+    text: str
+    is_wake_word_activation: bool = False
+
+
+@dataclass
+class UserData:
     """
-    Alex - Technical Executive
-    Provides technical expertise during consultancy calls when needed.
+    Stores all conversation data and context for Alex assistant.
     """
+    ctx: JobContext
+    conversation_history: List[ConversationTurn] = field(default_factory=list)
+    participant_names: Dict[str, str] = field(default_factory=dict)
+    total_turns: int = 0
+    wake_word_activations: int = 0
 
-    def __init__(self, shared_context: ChatContext = None, customer_name: str = None) -> None:
-        super().__init__(
-            instructions=f"""You are Alex, a Technical Executive at a tech consultancy firm. You are on a discovery call with {"a customer" if not customer_name else customer_name} alongside your colleague Sarah, the Business Development Executive.
-
-YOUR PERSONALITY:
-- Name: Alex
-- Role: Technical Executive / Solution Architect
-- Style: Professional, knowledgeable, but approachable
-- You speak with confidence about technical topics but avoid overwhelming jargon
-- You're collaborative and supportive of Sarah's lead on the call
-
-CRITICAL BEHAVIOR RULES:
-1. You ONLY speak when Sarah explicitly brings you into the conversation or when there's a clear technical question
-2. DO NOT jump in after every customer response - let Sarah lead the conversation
-3. When you do speak, keep it focused and concise (2-4 sentences typically)
-4. Always acknowledge the handoff from Sarah naturally
-5. After answering, smoothly hand back to Sarah unless there are follow-up technical questions
-
-WHEN YOU SPEAK:
-- Start with natural acknowledgments like "Thanks Sarah" or "Happy to help with that"
-- Address the customer directly: {"Thanks for that question" if not customer_name else f"Thanks {customer_name}"}
-- Provide specific, actionable technical insights
-- Conclude with a natural transition back: "Sarah, I'll pass it back to you" or "Does that help? Sarah can continue with the business aspects"
-
-YOUR TECHNICAL EXPERTISE:
-- Software architecture and system design
-- Technology stack recommendations (web, mobile, cloud, AI/ML)
-- Integration patterns and APIs
-- Security, scalability, and performance considerations
-- Development timelines from a technical perspective
-- DevOps and infrastructure
-
-HANDOFF PROTOCOL:
-After answering, use the return_to_sarah tool to hand back control. Use natural language like:
-- "I hope that clarifies things. Sarah, back to you."
-- "Does that answer your question? Sarah, please continue."
-- "That covers the technical side. Sarah, over to you for the next steps."
-
-Remember: You're a supportive technical expert, not the conversation leader. Sarah orchestrates the call, you provide technical depth when needed.
-""",
-            llm=openai.LLM(model="gpt-4o-mini", temperature=0.4),
-            tts=cartesia.TTS(
-                voice="248be419-c632-4f23-adf1-5324ed7dbf1d",  # Professional male voice
-                model="sonic-3"
-            ),
-            stt=deepgram.STT(model="nova-3"),
-            vad=silero.VAD.load(),
-            turn_detection=MultilingualModel(),
-            chat_ctx=shared_context
-        )
-        self.customer_name = customer_name
-
-    async def on_enter(self):
-        """Called when Alex becomes active"""
-        logger.info("🔧 Alex (Technical Executive) activated")
-
-        # Natural acknowledgment when brought into conversation
-        if self.customer_name:
-            await self.session.say(
-                f"Thanks Sarah. Happy to help with that, {self.customer_name}. Let me address the technical side."
-            )
-        else:
-            await self.session.say(
-                "Thanks Sarah. Happy to help with the technical aspects here."
-            )
-
-    @function_tool
-    async def return_to_sarah(self, context: RunContext):
-        """
-        Hand back control to Sarah after providing technical input.
-        Use this after you've answered the technical question to return conversation flow to Sarah.
-        """
-        logger.info("🔧 Alex handing back to Sarah (Business Development Executive)")
-
-        # Natural handoff back to Sarah
-        if self.customer_name:
-            await self.session.say(
-                f"I hope that helps, {self.customer_name}. Sarah, I'll hand it back to you."
-            )
-        else:
-            await self.session.say(
-                "I hope that clarifies things. Sarah, back to you."
-            )
-
-        # Switch back to Sarah with shared context
-        self.session.update_agent(
-            SarahBusinessAgent(shared_context=self.chat_ctx, customer_name=self.customer_name)
+    def add_turn(
+        self,
+        participant_identity: str,
+        text: str,
+        is_wake_word: bool = False
+    ):
+        """Add a conversation turn to history"""
+        participant_name = self.participant_names.get(
+            participant_identity,
+            f"User{len(self.participant_names) + 1}"
         )
 
+        turn = ConversationTurn(
+            timestamp=datetime.now().isoformat(),
+            participant_identity=participant_identity,
+            participant_name=participant_name,
+            text=text,
+            is_wake_word_activation=is_wake_word
+        )
+
+        self.conversation_history.append(turn)
+        self.total_turns += 1
+
+        if is_wake_word:
+            self.wake_word_activations += 1
+
+        logger.info(f"💬 {participant_name}: {text[:60]}{'...' if len(text) > 60 else ''}")
+
+    def get_conversation_context(self, max_turns: int = 20) -> str:
+        """Get formatted conversation history for LLM context"""
+        if not self.conversation_history:
+            return "No conversation yet."
+
+        recent_turns = self.conversation_history[-max_turns:]
+        formatted = []
+        for turn in recent_turns:
+            formatted.append(f"{turn.participant_name}: {turn.text}")
+
+        return "\n".join(formatted)
+
+    def get_participants_summary(self) -> str:
+        """Get summary of participants"""
+        if not self.ctx or not self.ctx.room:
+            return "No participants."
+
+        participants = []
+        for identity, participant in self.ctx.room.remote_participants.items():
+            name = self.participant_names.get(identity, participant.name or identity)
+            participants.append(f"- {name}")
+
+        return "\n".join(participants) if participants else "No other participants."
+
+
+# Type alias
+RunContext_T = RunContext[UserData]
+
 
 # ============================================================================
-# SARAH - BUSINESS DEVELOPMENT EXECUTIVE (Primary Lead)
+# ALEX - VIRTUAL ASSISTANT
 # ============================================================================
 
-class SarahBusinessAgent(Agent):
-    """
-    Sarah - Business Development Executive
-    Leads the consultancy discovery call and orchestrates the conversation.
-    """
+class AlexAssistant(Agent):
+    """Alex - Virtual Voice Assistant with Full Conversation Awareness"""
 
-    def __init__(self, shared_context: ChatContext = None, customer_name: str = None) -> None:
+    def __init__(self, shared_context: ChatContext = None) -> None:
         super().__init__(
-            instructions=f"""You are Sarah, a Business Development Executive at a tech consultancy firm. You are leading a discovery call with {"a customer" if not customer_name else customer_name} to understand their project requirements. Alex, your Technical Executive colleague, is also on the call to provide technical expertise when needed.
+            instructions="""You are Alex, a helpful virtual voice assistant who joins calls as a silent participant.
 
-YOUR PERSONALITY:
-- Name: Sarah
-- Role: Business Development Executive
-- Style: Warm, professional, consultative, and organized
-- You build rapport naturally while staying focused on gathering information
-- You're an active listener who asks thoughtful follow-up questions
+YOUR ROLE:
+- Professional, knowledgeable assistant
+- Join calls passively, listen without interrupting
+- LISTEN TO ENTIRE CONVERSATION (even before being activated)
+- Only speak when "hey alex" or "alex" is said
+- Provide context-aware responses using FULL conversation history
 
-YOUR PRIMARY GOALS FOR THIS CALL:
-1. Understand the customer's project vision and objectives
-2. Gather timeline requirements and constraints
-3. Identify budget parameters
-4. Understand team structure and stakeholders
-5. Assess technical requirements (with Alex's help)
-6. Set clear next steps
+EXPERTISE:
+- Technical questions (architecture, frameworks, tools)
+- Business advice and strategy
+- Project planning and requirements
+- Problem-solving and recommendations
+- Technology stack recommendations
 
-CONVERSATION FLOW & STRUCTURE:
+CRITICAL: CONVERSATION CONTEXT
+You have access to FULL conversation history, including everything BEFORE the wake word.
+When responding:
+1. Consider what was discussed before activation
+2. Reference who said what (you know participant names)
+3. Use overall context and flow
+4. Reference earlier decisions, questions, or concerns
 
-PHASE 1: INTRODUCTIONS (if first interaction)
-- Introduce yourself warmly
-- Introduce Alex as your technical colleague on the call
-- Ask for the customer's name and their role
-- Set the agenda: "I'd love to understand your project requirements, timelines, and how we can best support you."
+RESPONSE STYLE:
+- Professional but friendly (2-5 sentences)
+- Clear and actionable
+- **ALWAYS reference conversation context**
+- Address people by name
 
-PHASE 2: DISCOVERY & REQUIREMENTS GATHERING
-Lead the conversation through these areas naturally (not as a checklist):
+EXAMPLES:
 
-A. Project Vision & Objectives
-   - "Can you tell me about the project you're looking to build?"
-   - "What problem are you trying to solve?"
-   - "What does success look like for this project?"
+Scenario 1:
+[Before wake word]
+User1: "I think we should use React"
+User2: "And Node.js for backend"
+User1: "Hey Alex, what do you think?"
 
-B. Timeline & Urgency
-   - "What's your ideal timeline for this project?"
-   - "Do you have any hard deadlines or milestone dates?"
-   - "When would you like to launch or go live?"
+Alex: "User1 and User2 are on the right track. React and Node.js is solid - JavaScript across the stack makes development efficient. I'd add TypeScript for better type safety."
 
-C. Budget & Resources
-   - "Do you have a budget range in mind for this project?"
-   - "Are you looking for a fixed-price project or time and materials?"
+Scenario 2:
+[Before wake word]
+User1: "Budget is $50k"
+User2: "Timeline is 3 months"
+[Later]
+User1: "Alex, is this realistic?"
 
-D. Current State & Technical Landscape
-   - "Do you have any existing systems this needs to integrate with?"
-   - "What's your current technical setup?"
-   - [This is where you might bring in Alex for technical questions]
+Alex: "Given the $50k budget and 3-month timeline mentioned earlier, it's tight but achievable. Focus on core features first and do a phased launch."
 
-E. Team & Stakeholders
-   - "Who are the key stakeholders for this project?"
-   - "Do you have an internal technical team?"
-
-WHEN TO BRING IN ALEX (Technical Executive):
-Use the bring_in_alex tool when the customer asks about:
-- Technical architecture or how something would be built
-- Specific technology recommendations or stack
-- Technical feasibility of features
-- Integration approaches or APIs
-- Security, scalability, or performance concerns
-- Development complexity or technical timeline estimates
-
-DELEGATION PROTOCOL (When bringing in Alex):
-1. Acknowledge the technical nature: "That's a great technical question"
-2. Natural transition: "Let me bring in Alex, our Technical Executive, to speak to that"
-3. Use the bring_in_alex tool with the specific question
-4. After Alex responds, resume your flow naturally
-
-WHAT YOU HANDLE DIRECTLY (Don't delegate):
-- Business objectives and ROI
-- Budget and pricing discussions
-- Timeline expectations (non-technical)
-- Project scope and priorities
-- Team structure and stakeholders
-- Next steps and process
-- Rapport building and relationship questions
-
-CONVERSATION STYLE:
-- Conversational and natural (not robotic or scripted)
-- Ask one question at a time, don't overwhelm
-- Use the customer's name when you know it: {f"{customer_name}" if customer_name else "they share it"}
-- Show active listening: "That makes sense" "I understand" "Tell me more about..."
-- Build on previous responses rather than jumping to new topics
-- Acknowledge concerns with empathy
-- Be concise - avoid long monologues
-- NEVER use bullet points or lists in your speech - speak naturally
-
-CLOSING & NEXT STEPS:
-- Summarize key points
-- Set clear next steps
-- Thank them for their time
-- Offer to send a follow-up email
-
-Remember: You're the conductor of this call. Keep it flowing naturally, bring in Alex when needed, and focus on understanding the customer's needs deeply.
+Remember: You've been listening to EVERYTHING. Use that knowledge!
 """,
-            llm=openai.LLM(model="gpt-4o-mini", temperature=0.7),
+            llm=openai.LLM(model="gpt-4o-mini", temperature=0.6),
             tts=cartesia.TTS(
-                voice="79a125e8-cd45-4c13-8a67-188112f4dd22",  # Friendly female voice
+                voice="248be419-c632-4f23-adf1-5324ed7dbf1d",
                 model="sonic-3"
             ),
             stt=deepgram.STT(model="nova-3"),
@@ -256,126 +199,197 @@ Remember: You're the conductor of this call. Keep it flowing naturally, bring in
             chat_ctx=shared_context
         )
 
-        # Track conversation state
-        self._is_first_activation = shared_context is None
-        self.customer_name = customer_name
+        self.wake_word_detected = False
 
     async def on_enter(self):
-        """Called when Sarah becomes active"""
-        logger.info("💼 Sarah (Business Development Executive) activated")
+        """Join in silent listening mode"""
+        logger.info("🤖 Alex joined - silent listening mode")
+        logger.info(f"⏳ Wake words: {', '.join(WAKE_WORDS)}")
+        logger.info("📝 Recording all conversation...")
 
-        # Initial greeting and introduction (only on first activation)
-        if self._is_first_activation:
-            await self.session.say(
-                "Hi there! I'm Sarah, a Business Development Executive with our consultancy. "
-                "I have my colleague Alex on the call as well - he's our Technical Executive. "
-                "We're really excited to learn about your project today. "
-                "Before we dive in, may I ask who I'm speaking with and what you'd like to discuss?"
-            )
+    def stt_node(
+        self,
+        audio: AsyncIterable[rtc.AudioFrame],
+        model_settings: Optional[dict] = None
+    ) -> Optional[AsyncIterable]:
+        """
+        Store ALL transcripts in UserData + filter for wake word
+        """
+        parent_stream = super().stt_node(audio, model_settings)
+
+        if parent_stream is None:
+            return None
+
+        async def process_stream():
+            async for event in parent_stream:
+                if (hasattr(event, 'type') and
+                    str(event.type) == "SpeechEventType.FINAL_TRANSCRIPT" and
+                    event.alternatives):
+
+                    transcript = event.alternatives[0].text.lower()
+                    original_transcript = event.alternatives[0].text
+
+                    # Get participant identity
+                    participant_identity = getattr(
+                        getattr(event, 'participant', None),
+                        'identity',
+                        'unknown'
+                    )
+
+                    # Clean for wake word detection
+                    cleaned_transcript = re.sub(r'[^\w\s]', '', transcript)
+                    cleaned_transcript = ' '.join(cleaned_transcript.split())
+
+                    logger.info(f"🔍 [{participant_identity[:8]}...] {cleaned_transcript[:50]}")
+
+                    # ALWAYS store in UserData
+                    userdata = self.session.userdata
+                    if userdata:
+                        userdata.add_turn(
+                            participant_identity=participant_identity,
+                            text=original_transcript,
+                            is_wake_word=False
+                        )
+
+                    if not self.wake_word_detected:
+                        # Check for wake word
+                        wake_word_found = None
+                        for wake_word in WAKE_WORDS:
+                            if wake_word in cleaned_transcript:
+                                wake_word_found = wake_word
+                                break
+
+                        if wake_word_found:
+                            logger.info(f"🎯 Wake word: '{wake_word_found}'")
+                            self.wake_word_detected = True
+
+                            # Mark as wake word activation
+                            if userdata and userdata.conversation_history:
+                                userdata.conversation_history[-1].is_wake_word_activation = True
+                                userdata.wake_word_activations += 1
+
+                            # Extract query
+                            content_after = cleaned_transcript.split(wake_word_found, 1)[-1].strip()
+
+                            if content_after:
+                                logger.info(f"💬 Query: '{content_after}'")
+                                event.alternatives[0].text = content_after
+                                yield event
+                            else:
+                                logger.info("⏳ Waiting for query")
+                        else:
+                            logger.debug("🔇 No wake word")
+                    else:
+                        # Process follow-up
+                        logger.info(f"✅ Follow-up: '{transcript}'")
+                        yield event
+
+                elif self.wake_word_detected:
+                    yield event
+
+        return process_stream()
+
+    async def on_user_turn_completed(self, chat_ctx, new_message=None):
+        """
+        Inject conversation context before LLM processing
+        """
+        if self.wake_word_detected:
+            logger.info("🗣️ Generating response with context...")
+
+            # Get conversation context
+            userdata = self.session.userdata
+            if userdata:
+                context = userdata.get_conversation_context(max_turns=20)
+                participants = userdata.get_participants_summary()
+
+                logger.info(f"📚 {len(userdata.conversation_history)} turns in history")
+
+                # Inject context into chat
+                context_message = f"""CONVERSATION CONTEXT:
+
+PARTICIPANTS:
+{participants}
+
+CONVERSATION HISTORY:
+{context}
+
+Use this context to provide relevant responses. Reference specific things people said.
+"""
+
+                # Add to chat context
+                if chat_ctx and hasattr(chat_ctx, 'messages'):
+                    chat_ctx.messages.insert(-1, {
+                        "role": "system",
+                        "content": context_message
+                    })
+
+            try:
+                result = await super().on_user_turn_completed(chat_ctx, new_message)
+                self.wake_word_detected = False
+                logger.info("✅ Response done - silent mode")
+                return result
+            except Exception as e:
+                logger.error(f"❌ Error: {e}")
+                self.wake_word_detected = False
+                raise
+        else:
+            logger.debug("🔇 No wake word")
+            raise StopResponse()
 
     @function_tool
-    async def bring_in_alex(
-            self,
-            context: RunContext,
-            technical_question: str
-    ):
-        """
-        Bring Alex (Technical Executive) into the conversation to address technical questions.
+    async def get_conversation_summary(self, context: RunContext_T) -> str:
+        """Get summary of conversation"""
+        userdata = context.userdata
+        if not userdata or not userdata.conversation_history:
+            return "No conversation yet."
 
-        Use this when the customer asks about:
-        - Technical architecture or implementation approach
-        - Technology stack recommendations
-        - Technical feasibility or complexity
-        - Integration approaches
-        - Security, scalability, or performance
-        - Technical timeline estimates
-
-        Args:
-            technical_question: The specific technical question the customer asked
-        """
-        logger.info(f"💼 Sarah bringing in Alex for: {technical_question}")
-
-        # Natural transition to Alex
-        await self.session.say(
-            "That's a great technical question. Let me bring in Alex, our Technical Executive, to address that."
-        )
-
-        # Hand off to Alex with shared context and customer name
-        self.session.update_agent(
-            AlexTechnicalAgent(shared_context=self.chat_ctx, customer_name=self.customer_name)
-        )
-
-        return f"Brought in Alex for technical question: {technical_question}"
-
-    @function_tool
-    async def capture_customer_name(
-            self,
-            context: RunContext,
-            name: str
-    ):
-        """
-        Capture and remember the customer's name for personalization.
-        Use this when the customer introduces themselves.
-
-        Args:
-            name: The customer's name
-        """
-        logger.info(f"💼 Customer name captured: {name}")
-        self.customer_name = name
-
-        # Acknowledge naturally
-        await self.session.say(
-            f"Great to meet you, {name}! Thanks for taking the time to speak with us today."
-        )
-
-        return f"Customer name set to: {name}"
+        return f"Total turns: {userdata.total_turns}\n{userdata.get_conversation_context(10)}"
 
 
 # ============================================================================
-# SESSION ENTRY POINT
+# ENTRY POINT
 # ============================================================================
 
 def prewarm(proc: JobProcess):
-    """Prewarm models to reduce startup latency"""
+    """Prewarm models"""
     proc.userdata["vad"] = silero.VAD.load()
-    logger.info("✅ Models prewarmed successfully")
+    logger.info("✅ Models prewarmed")
 
 
 async def entrypoint(ctx: JobContext):
-    """
-    Main entry point for the consultancy discovery call.
-    Initializes with Sarah (Business Development Executive) as call leader.
-    """
-    logger.info(f"🚀 Starting consultancy discovery call in room: {ctx.room.name}")
+    """Main entry point with UserData initialization"""
+    logger.info(f"🚀 Starting Alex in room: {ctx.room.name}")
 
-    # Add logging context
-    ctx.log_context_fields = {
-        "room": ctx.room.name,
-    }
+    # Create UserData
+    userdata = UserData(ctx=ctx)
 
-    # Create shared session with Sarah as the primary agent
-    session = AgentSession(
+    # Connect to get participants
+    await ctx.connect()
+
+    # Initialize participant names
+    for identity, participant in ctx.room.remote_participants.items():
+        userdata.participant_names[identity] = participant.name or f"User{len(userdata.participant_names)+1}"
+        logger.info(f"👥 {participant.name or identity} ({identity[:8]}...)")
+
+    ctx.log_context_fields = {"room": ctx.room.name}
+
+    # Create session WITH UserData
+    session = AgentSession[UserData](
+        userdata=userdata,
         vad=ctx.proc.userdata["vad"],
         turn_detection=MultilingualModel(),
     )
 
-    # Start session with Sarah (Business Development Executive)
     await session.start(
-        agent=SarahBusinessAgent(),
+        agent=AlexAssistant(),
         room=ctx.room
     )
 
-    logger.info("✅ Consultancy call session started successfully")
-    logger.info("💼 Sarah (Business Development Executive) is leading the call")
-    logger.info("🔧 Alex (Technical Executive) is standing by for technical questions")
+    logger.info("✅ Alex listening silently")
+    logger.info(f"🎯 Wake words: {', '.join(WAKE_WORDS)}")
+    logger.info("📝 Recording all conversation")
+    logger.info(f"👥 {len(userdata.participant_names)} participants")
 
-    # Connect to the room
-    await ctx.connect()
-
-
-# ============================================================================
-# MAIN RUNNER
-# ============================================================================
 
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(
